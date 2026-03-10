@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Market {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  // Demand metrics (normalized 0-1)
+  volume      Float    @default(0)
+  trend       Float    @default(0)
+  // Monetization metrics (normalized 0-1)
+  cpc         Float    @default(0)
+  competition Float    @default(0)
+  // Execution metrics (normalized 0-1)
+  policyRisk  Float    @default(0)
+  prodCost    Float    @default(0)
+  // Calculated score
+  score       Float    @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  drafts ContentDraft[]
+}
+
+model ContentDraft {
+  id          String      @id @default(cuid())
+  marketId    String?
+  market      Market?     @relation(fields: [marketId], references: [id])
+  platform    String      @default("TIKTOK")
+  status      String      @default("DRAFT")
+  riskLevel   String      @default("MEDIUM")
+  title       String?
+  content     String
+  hook        String?
+  cta         String?
+  hashtags    String?
+  mediaNotes  String?
+  prRequired  Boolean     @default(false)
+  qcResult    String?
+  humanNote   String?
+  publishedAt DateTime?
+  scheduledAt DateTime?
+  tiktokPostId String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  jobs SchedulerJob[]
+}
+
+model SchedulerJob {
+  id          String    @id @default(cuid())
+  draftId     String?
+  draft       ContentDraft? @relation(fields: [draftId], references: [id])
+  jobType     String
+  status      String    @default("PENDING")
+  payload     String?
+  result      String?
+  error       String?
+  runAt       DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model LLMConfig {
+  id          String   @id @default(cuid())
+  provider    String   @default("claude")
+  model       String
+  temperature Float    @default(0.7)
+  maxTokens   Int      @default(2000)
+  useCase     String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
