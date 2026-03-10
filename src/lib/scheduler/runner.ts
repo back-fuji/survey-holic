@@ -11,11 +11,17 @@
  *   ANALYTICS_FETCH → (stub) fetch analytics from platform
  */
 
-import { prisma } from "@/lib/db/client";
+import { prisma, type Prisma } from "@/lib/db/client";
 import { generateDrafts } from "@/lib/content/generator";
 import { runAutoQC, needsHumanReview } from "@/lib/content/qc";
 import { createTikTokClient } from "@/lib/platforms/tiktok";
 import type { GenerateRequest } from "@/types";
+
+type JobWithDraft = Prisma.SchedulerJobGetPayload<{
+  include: { draft: true };
+}>;
+
+type DraftForRunner = JobWithDraft["draft"];
 
 export interface JobRunResult {
   jobId: string;
@@ -75,9 +81,7 @@ export async function runPendingJobs(): Promise<JobRunResult[]> {
   return results;
 }
 
-async function dispatchJob(
-  job: Awaited<ReturnType<typeof prisma.schedulerJob.findMany>>[number]
-): Promise<JobRunResult> {
+async function dispatchJob(job: JobWithDraft): Promise<JobRunResult> {
   const payload = job.payload ? JSON.parse(job.payload) : {};
 
   switch (job.jobType) {
@@ -155,7 +159,7 @@ async function runGenerateJob(
 
 async function runQCJob(
   jobId: string,
-  draft: { id: string; title: string | null; content: string; hook: string | null; cta: string | null; hashtags: string | null; platform: string; prRequired: boolean } | null,
+  draft: DraftForRunner,
   _payload: unknown
 ): Promise<JobRunResult> {
   if (!draft) throw new Error("QC_CHECK job has no associated draft");
@@ -192,7 +196,7 @@ async function runQCJob(
 
 async function runPublishJob(
   jobId: string,
-  draft: { id: string; content: string; title: string | null; hashtags: string | null; status: string } | null
+  draft: DraftForRunner
 ): Promise<JobRunResult> {
   if (!draft) throw new Error("PUBLISH job has no associated draft");
   if (draft.status !== "APPROVED") {

@@ -1,9 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { LLMMessage } from "@/types";
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+let _client: Anthropic | null = null;
+function getClient(): Anthropic {
+  if (!_client) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY is not set");
+    }
+    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _client;
+}
 
 export const CLAUDE_MODELS = {
   default: "claude-sonnet-4-6",
@@ -37,7 +44,7 @@ export async function claudeChat(
   const systemFromMessages = messages.find((m) => m.role === "system");
   const finalSystem = systemPrompt ?? systemFromMessages?.content;
 
-  const response = await client.messages.create({
+  const response = await getClient().messages.create({
     model,
     max_tokens: maxTokens,
     temperature,
