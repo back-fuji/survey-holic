@@ -18,6 +18,12 @@ export const CLAUDE_MODELS = {
   powerful: "claude-opus-4-6",
 } as const;
 
+export interface ClaudeUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export async function claudeChat(
   messages: LLMMessage[],
   options: {
@@ -27,6 +33,19 @@ export async function claudeChat(
     systemPrompt?: string;
   } = {}
 ): Promise<string> {
+  const { text } = await claudeChatWithUsage(messages, options);
+  return text;
+}
+
+export async function claudeChatWithUsage(
+  messages: LLMMessage[],
+  options: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    systemPrompt?: string;
+  } = {}
+): Promise<{ text: string; usage: ClaudeUsage }> {
   const {
     model = CLAUDE_MODELS.default,
     temperature = 0.7,
@@ -54,5 +73,12 @@ export async function claudeChat(
 
   const block = response.content[0];
   if (block.type !== "text") throw new Error("Unexpected response type");
-  return block.text;
+
+  const usage: ClaudeUsage = {
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    totalTokens: response.usage.input_tokens + response.usage.output_tokens,
+  };
+
+  return { text: block.text, usage };
 }

@@ -3,8 +3,10 @@
  * Provider can be overridden per-call or falls back to env default.
  */
 import type { LLMMessage, LLMConfig, LLMProvider } from "@/types";
-import { claudeChat, CLAUDE_MODELS } from "./claude";
+import { claudeChat, claudeChatWithUsage, type ClaudeUsage, CLAUDE_MODELS } from "./claude";
 import { openAIChat, OPENAI_MODELS } from "./openai";
+
+export type { ClaudeUsage };
 
 function defaultProvider(): LLMProvider {
   const env = process.env.DEFAULT_LLM_PROVIDER;
@@ -43,6 +45,36 @@ export async function llmChatWithSystem(
     { role: "user", content: userPrompt },
   ];
   return llmChat(messages, config);
+}
+
+export async function llmChatWithUsage(
+  messages: LLMMessage[],
+  config: Partial<LLMConfig> = {}
+): Promise<{ text: string; usage: ClaudeUsage }> {
+  const provider = config.provider ?? defaultProvider();
+  const model = resolveModel(provider, config.model);
+  const temperature = config.temperature ?? 0.7;
+  const maxTokens = config.maxTokens ?? 2000;
+
+  if (provider === "claude") {
+    return claudeChatWithUsage(messages, { model, temperature, maxTokens });
+  } else {
+    // OpenAI fallback — token tracking not yet implemented
+    const text = await openAIChat(messages, { model, temperature, maxTokens });
+    return { text, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
+  }
+}
+
+export async function llmChatWithSystemAndUsage(
+  systemPrompt: string,
+  userPrompt: string,
+  config: Partial<LLMConfig> = {}
+): Promise<{ text: string; usage: ClaudeUsage }> {
+  const messages: LLMMessage[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+  return llmChatWithUsage(messages, config);
 }
 
 export { CLAUDE_MODELS, OPENAI_MODELS };
