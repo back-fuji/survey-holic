@@ -70,9 +70,16 @@ export default function ContentPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
+      const text = await res.text();
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(JSON.stringify(err.error));
+        let errMessage: string;
+        try {
+          const err = text ? JSON.parse(text) : {};
+          errMessage = typeof err.error === "object" ? JSON.stringify(err.error) : String(err.error ?? res.statusText);
+        } catch {
+          errMessage = text || `HTTP ${res.status}`;
+        }
+        throw new Error(errMessage);
       }
       await fetchDrafts();
     } catch (err) {
@@ -224,7 +231,7 @@ export default function ContentPage() {
             </div>
 
             {error && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-600 whitespace-pre-line">
                 {error}
               </div>
             )}

@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import "./globals.css";
-import { Sidebar } from "@/components/Sidebar";
+
+const Sidebar = dynamic(
+  () => import("@/components/Sidebar").then((mod) => ({ default: mod.Sidebar })),
+  { ssr: true }
+);
 
 export const metadata: Metadata = {
   title: "Survey-Holic | SNS収益化AI基盤",

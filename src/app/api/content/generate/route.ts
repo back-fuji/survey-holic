@@ -17,63 +17,80 @@ const GenerateSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
-  const parsed = GenerateSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  try {
+    const body = await req.json();
+    const parsed = GenerateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+    }
+
+    const request = parsed.data;
+
+    // Generate drafts via LLM
+    const generated = await generateDrafts(request, {
+      provider: request.provider,
+    });
+
+    // Save and immediately QC each draft
+    const results = await Promise.all(
+      generated.map(async (draft) => {
+        // Save draft
+        const saved = await prisma.contentDraft.create({
+          data: {
+            marketId: request.marketId ?? null,
+            platform: request.platform,
+            status: "DRAFT",
+            riskLevel: draft.riskLevel,
+            title: draft.title,
+            content: draft.content,
+            hook: draft.hook,
+            cta: draft.cta,
+            hashtags: JSON.stringify(draft.hashtags),
+            prRequired: request.prRequired,
+          },
+        });
+
+        // Run auto QC immediately
+        const qc = await runAutoQC(
+          {
+            title: draft.title,
+            content: draft.content,
+            hook: draft.hook,
+            cta: draft.cta,
+            hashtags: draft.hashtags.join(", "),
+            platform: request.platform,
+            prRequired: request.prRequired,
+          },
+          { provider: request.provider }
+        );
+
+        const needsHuman = needsHumanReview(qc);
+        const updated = await prisma.contentDraft.update({
+          where: { id: saved.id },
+          data: {
+            status: needsHuman ? "NEEDS_HUMAN" : "QC_PASSED",
+            riskLevel: qc.riskLevel,
+            qcResult: JSON.stringify(qc),
+            prRequired: qc.prRequired,
+          },
+        });
+
+        return { draft: updated, qc, needsHuman };
+      })
+    );
+
+    return NextResponse.json({ results }, { status: 201 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isOpenAIQuota =
+      message.includes("429") ||
+      /quota|billing|rate limit/i.test(message);
+    const errorMessage = isOpenAIQuota
+      ? `${message}\n\n→ OpenAIの利用枠を超えています。フォームの「AIモデル」で「Claude」に切り替えるか、OpenAIのプラン・請求を確認してください。`
+      : message;
+    return NextResponse.json(
+      { error: errorMessage },
+      { status: 500 }
+    );
   }
-
-  const request = parsed.data;
-
-  // Generate drafts via LLM
-  const generated = await generateDrafts(request, {
-    provider: request.provider,
-  });
-
-  // Save and immediately QC each draft
-  const results = await Promise.all(
-    generated.map(async (draft) => {
-      // Save draft
-      const saved = await prisma.contentDraft.create({
-        data: {
-          marketId: request.marketId ?? null,
-          platform: request.platform,
-          status: "DRAFT",
-          riskLevel: draft.riskLevel,
-          title: draft.title,
-          content: draft.content,
-          hook: draft.hook,
-          cta: draft.cta,
-          hashtags: JSON.stringify(draft.hashtags),
-          prRequired: request.prRequired,
-        },
-      });
-
-      // Run auto QC immediately
-      const qc = await runAutoQC({
-        title: draft.title,
-        content: draft.content,
-        hook: draft.hook,
-        cta: draft.cta,
-        hashtags: draft.hashtags.join(", "),
-        platform: request.platform,
-        prRequired: request.prRequired,
-      });
-
-      const needsHuman = needsHumanReview(qc);
-      const updated = await prisma.contentDraft.update({
-        where: { id: saved.id },
-        data: {
-          status: needsHuman ? "NEEDS_HUMAN" : "QC_PASSED",
-          riskLevel: qc.riskLevel,
-          qcResult: JSON.stringify(qc),
-          prRequired: qc.prRequired,
-        },
-      });
-
-      return { draft: updated, qc, needsHuman };
-    })
-  );
-
-  return NextResponse.json({ results }, { status: 201 });
 }
